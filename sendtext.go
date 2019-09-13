@@ -4,14 +4,16 @@ import (
 	"encoding/json"
 	"net/http"
 
+	notify "github.com/alphagov/notifications-go-client"
+
 	"github.com/gorilla/mux"
 	"github.com/onsdigital/log.go/log"
 )
 
 type textrequest struct {
-	PhoneNumber     *string     `json:"phoneNumber"`
-	Personalisation interface{} `json:"personalisation"`
-	Reference       string      `json:"reference"`
+	PhoneNumber     string            `json:"phoneNumber"`
+	Personalisation map[string]string `json:"personalisation"`
+	Reference       string            `json:"reference"`
 }
 
 func sendTextMessage(w http.ResponseWriter, r *http.Request) {
@@ -35,4 +37,19 @@ func sendTextMessage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Malformed JSON in body of request", http.StatusBadRequest)
 		return
 	}
+
+	response, err := client.SendSms(request.PhoneNumber, id, request.Personalisation, request.Reference)
+	if err != nil {
+		if apierr, ok := err.(*notify.APIError); ok {
+			log.Event(nil, "Error received from GovNotify API", log.Data{"status_code": apierr.StatusCode, "err": apierr.Message})
+			http.Error(w, apierr.Message, apierr.StatusCode)
+			return
+		}
+
+		log.Event(nil, "Unhandled error in GovNotify client", log.Data{"err": log.Error(err), "id": id})
+		http.Error(w, "Unhandled error in GovNotify client", http.StatusInternalServerError)
+		return
+	}
+
+	log.Event(nil, "SMS sent to GovNotify", log.Data{"ID": response.ID})
 }
